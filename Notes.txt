@@ -1,0 +1,102 @@
+NOTES FOR Apache Kafka:
+
+Theory:
+
+
+Practical Example:
+
+Steps for Installation:
+1. Install Zookeeper:
+    Installation URL: https://zookeeper.apache.org/
+    After Installation: Extract the Zip file
+    Navigate to the extracted Zip file in the terminal
+    Run this step to initialize Zookeeper:
+        For Older versions of Kafka run this step: bin/zookeeper-server-start.sh config/zookeeper.properties
+        For newer version of kafka [2.13-4.0.0]: bin/zkServer.sh start
+
+
+2. Install Kafka:
+    Installation URL: https://kafka.apache.org/quickstart
+    After Installation: Extract the Zip file
+    Navigate to the extracted Zip file in the terminal
+    Run this step to initialize kafka:
+        a. Generate a Cluster UUID: KAFKA_CLUSTER_ID="$(bin/kafka-storage.sh random-uuid)"
+        b. Format Log Directories: bin/kafka-storage.sh format --standalone -t $KAFKA_CLUSTER_ID -c config/server.properties
+        c. Start the Kafka Server: bin/kafka-server-start.sh config/server.properties
+
+Below is the step by step explanation of the commands:
+
+NOTE: The below will only RUN, if our KAFKA server is UP & Running.
+
+PUBLISHER:
+    1. Initially we need to create a topic:
+        Run: bin/kafka-topics.sh --create --topic dummyTopic --bootstrap-server localhost:9092
+            --bootstrap-server: This helps in informing kafka to use the particular port. This was done in the newer versions of Kafka
+            For older versions, Kafka is dependent on Zookeeper: so the command changes to
+                bin/kafka-topics.sh --create --topic dummyTopic --zookeeper localhost:9091 [changed the port just for reference]
+        Once we hit this line, we will get "Created topic dummyTopic."
+    2. To check whether the topic has been created successfully or not:
+        Run: bin/kafka-topics.sh --describe --topic dummyTopic --bootstrap-server localhost:9092
+            --describe: this key word is used to check whether a topic has been created or not
+                        this will return something in this format:
+                            Topic: dummyTopic	TopicId: decRU2eYQw2cQYh33__1zA	PartitionCount: 1	ReplicationFactor: 1	Configs: segment.bytes=1073741824
+                            Topic: dummyTopic	Partition: 0	Leader: 1	Replicas: 1	Isr: 1	Elr: 	LastKnownElr:
+    3. To check the list of topics that has been created:
+        Run: bin/kafka-topics.sh --list --bootstrap-server localhost:9092.
+            This will return the list of topics that has been. Considering you have followed the above steps for the first time or learning Kafka for the first time
+            Once you hit the above command, you will be getting "dummyTopic" as an output in the terminal
+            Because we have created only on topic till now
+    4. Till now, we have looked into how a CREATION/ VERIFICATION / LIST down topics that has been created. But to send an event to a broker, there needs to be a consumer.
+        So check point(a) in consumers topic for further updates.
+    5. Once a consumer is created, now we can pass events or message from the publisher.
+        - For this I have created a new topic: bin/kafka-topics.sh --create --topic driver-location-updates --bootstrap-server localhost:9092 --partitions 1 --replication-factor 1
+                The new topic name that I have created is "driver-location-updates"
+        - Now to pass events Run:
+            echo '{"driverId": "12345", "latitude": 40.7128, "longitude": -74.0060, "timestamp": "2025-05-04T14:30:00Z"}' | bin/kafka-console-producer.sh --bootstrap-server localhost:9092 --topic driver-location-updates
+                - Initially we have the message and at the end, we have added
+                    bin/kafka-console-producer.sh: SENDS message to a topic
+                    --bootstrap-server localhost:9092: from which server port number
+                    --topic driver-location-updates: topic name
+        - As soon as you have hit the above text on the terminal, if we check parallel on our consumer terminal, a log would have been printed with the above message.
+    6. Consumers can be created in 2 ways,
+        - Without groups, what we saw above: where no grouping of messages were done, and all the messages where dumped in a single consumers.
+            -- The issue with creating a consumer without group is, there is no partitioning of data, which makes it much more difficulties in fetching back the data.
+        - With groups. So check point(b) in consumers topic for further updates.
+    7. For consumers with groups, we create another new topic:
+        - Create a new topic RUN:
+            bin/kafka-topics.sh --create --topic driver-location-updates-with-2-partitions --bootstrap-server localhost:9092 --partitions 2 --replication-factor 1
+                - This will define, we create 2 partitions
+        - Once topics are created, create consumers as per your wish, to start with, create only 1 consumer:
+            - echo "1:{\"driverId\": \"1\", \"latitude\": 28.7041, \"longitude\": 77.1025, \"timestamp\": \"2025-05-04T14:30:00Z\"}" | bin/kafka-console-producer.sh --broker-list localhost:9092 --topic driver-location-updates-with-2-partitions --property "parse.key=true" --property "key.separator=:"
+            - echo "2:{\"driverId\": \"2\", \"latitude\": 28.6139, \"longitude\": 77.2090, \"timestamp\": \"2025-05-04T15:00:00Z\"}" | bin/kafka-console-producer.sh --broker-list localhost:9092 --topic driver-location-updates-with-2-partitions --property "parse.key=true" --property "key.separator=:"
+
+            - Hit the above 2 message, and observe in your consumer, both the messages will be triggered
+
+            - Now to Spice up the things further, create another consumers [Keep running the first consumer that you created]. Now you have 2 consumers running.
+
+            - Hit the above 2 messages, by changing some values [assume you have changed latitude]. Now if you closely observe based on the key "1:" and "2:", our consumers will pick these keys.
+            - so 2 different key value are distributed equally by 2 consumers. Consider if we had 3 different keys, and 2 consumers, KAFKA internally decides which consumers will pick how many key value
+            - it can be either 2:1 or 1:2 [(i.e) Consumer - 1: Picks 2 keys and Consumer - 2: Picks 1 key and vice-versa].
+
+CONSUMER:
+------------------------------------------------------------------------------------------------------------------------
+    a. To create a consumer WITHOUT group:
+        Run: bin/kafka-console-consumer.sh --topic driver-location-updates --bootstrap-server localhost:9092 --from-beginning
+            - If we see the difference, while creating a topic we use: kafka-console-topic.sh and for creating a consumer group kafka-console-consumer.sh
+            - The --from-beginning flag in the kafka-console-consumer.sh command is used to consume all messages from the beginning of the topic,
+              rather than just the new messages that arrive after the consumer starts. If you omit --from-beginning, the consumer will only get new messages
+              that are published after the consumer starts.
+            - Go back to publishers and start from point - 5.
+------------------------------------------------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------------------------------------------------
+    b. To create a consumer WITH group:
+        Run: bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic driver-location-updates-with-2-partitions --group driver-location-consumer --from-beginning
+            --group driver-location-consumer: considering we have created multiple consumer groups, for that we have given the name as driver-location-consumer
+                                              this can come down handy, when any breakdown happens, or while load balancing, if we have too many influx of data
+                                              kafka will internally load balance based on the total availability of consumers and based on the partition of data.
+        Till now, if you are following, you have created only one consumer. If we need to create multiple consumers like this, we can hit the above command once again.
+        Everytime we hit the above command it will group under "driver-location-consumer".
+        - Go back to publishers and start from point - 7.
+
+------------------------------------------------------------------------------------------------------------------------
